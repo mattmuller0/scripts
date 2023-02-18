@@ -169,10 +169,13 @@ def plot_training_roc_curve_ci(
     ):
     '''
     model (joblib) : model to be copied for determining training confidence
-    X (np.array) : np array of features used
+    X (np.array or pd.DataFrame) : np array of features used
     y (np.array) : list of labels used for classes
     save_path (str) : string pointing where to save image
     '''
+    if not isinstance(X, np.ndarray):
+        X = X.to_numpy()
+
     cv = StratifiedKFold(n_splits=cv_splits)
     model = clone(model)
 
@@ -245,7 +248,6 @@ def plot_training_roc_curve_ci(
     else:
         plt.show()
 
-#### Under construction still!!!
 def plot_roc_curve_ci(
     model,
     X, y,
@@ -257,228 +259,303 @@ def plot_roc_curve_ci(
     ):
     '''
     model (joblib) : model to be copied for determining training confidence
-    X (np.array) : np array of features used
+    X (np.array or pd.DataFrame) : np array of features used
     y (np.array) : list of labels used for classes
     save_path (str) : string pointing where to save image
     '''
-    if stratified:
-        cv = StratifiedKFold(n_splits=cv_splits)
+    if isinstance(X, np.ndarray):    
+        if stratified:
+            cv = StratifiedKFold(n_splits=cv_splits)
 
-        tprs = []
-        aucs = []
-        mean_fpr = np.linspace(0, 1, 100)
+            tprs = []
+            aucs = []
+            mean_fpr = np.linspace(0, 1, 100)
 
-        fig, ax = plt.subplots(figsize=(6, 6))
-        for fold, (train, test) in enumerate(cv.split(X, y)):
-            viz = RocCurveDisplay.from_estimator(
-                model,
-                X[train],
-                y[train],
-                name=f"ROC fold {fold}",
-                alpha=0.3,
-                lw=1,
-                ax=ax,
+            fig, ax = plt.subplots(figsize=(6, 6))
+            for fold, (train, test) in enumerate(cv.split(X, y)):
+                viz = RocCurveDisplay.from_estimator(
+                    model,
+                    X[train],
+                    y[train],
+                    name=f"ROC fold {fold}",
+                    alpha=0.3,
+                    lw=1,
+                    ax=ax,
+                )
+                plt.cla() # This removes each individual interation
+                interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
+                interp_tpr[0] = 0.0
+                tprs.append(interp_tpr)
+                aucs.append(viz.roc_auc)
+            ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
+            
+            mean_tpr = np.mean(tprs, axis=0)
+            mean_tpr[-1] = 1.0
+            mean_auc = auc(mean_fpr, mean_tpr)
+            std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
+
+            ax.plot(
+                mean_fpr,
+                mean_tpr,
+                color="b",
+                label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {std_auc:0.2f})",
+                lw=2,
+                alpha=0.8,
             )
-            plt.cla() # This removes each individual interation
-            interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
-            interp_tpr[0] = 0.0
-            tprs.append(interp_tpr)
-            aucs.append(viz.roc_auc)
-        ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
-        
-        mean_tpr = np.mean(tprs, axis=0)
-        mean_tpr[-1] = 1.0
-        mean_auc = auc(mean_fpr, mean_tpr)
-        std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
 
-        ax.plot(
-            mean_fpr,
-            mean_tpr,
-            color="b",
-            label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {std_auc:0.2f})",
-            lw=2,
-            alpha=0.8,
-        )
+            # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
+            tprs = np.array(tprs)
+            ci_tpr = [mean_confidence_interval(tprs[:,idx].flatten()) for idx in range(tprs.shape[1])]
+            ci_tpr = np.array(ci_tpr)[:,0] - np.array(ci_tpr)[:,1] # mean - (mean + ci)
 
-        # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
-        tprs = np.array(tprs)
-        ci_tpr = [mean_confidence_interval(tprs[:,idx].flatten()) for idx in range(tprs.shape[1])]
-        ci_tpr = np.array(ci_tpr)[:,0] - np.array(ci_tpr)[:,1] # mean - (mean + ci)
+            tprs_upper = np.minimum(mean_tpr + ci_tpr, 1)
+            tprs_lower = np.maximum(mean_tpr - ci_tpr, 0)
+            ax.fill_between(
+                mean_fpr,
+                tprs_lower,
+                tprs_upper,
+                color="grey",
+                alpha=0.2,
+                label="95% Confidence Interval",
+            )
 
-        tprs_upper = np.minimum(mean_tpr + ci_tpr, 1)
-        tprs_lower = np.maximum(mean_tpr - ci_tpr, 0)
-        ax.fill_between(
-            mean_fpr,
-            tprs_lower,
-            tprs_upper,
-            color="grey",
-            alpha=0.2,
-            label="95% Confidence Interval",
-        )
+            if not title:
+                title="Mean ROC curve with 95% Confidence Interval"
+            ax.set(
+                xlim=[0, 1],
+                ylim=[0, 1],
+                xlabel="False Positive Rate",
+                ylabel="True Positive Rate",
+                title="Mean ROC curve with 95% Confidence Interval",
+            )
+            ax.axis("square")
+            ax.grid(False)
+            ax.legend(loc="lower right")
+            if save_path:
+                plt.savefig(save_path)
+            else:
+                plt.show()
 
-        if not title:
-            title="Mean ROC curve with 95% Confidence Interval"
-        ax.set(
-            xlim=[0, 1],
-            ylim=[0, 1],
-            xlabel="False Positive Rate",
-            ylabel="True Positive Rate",
-            title="Mean ROC curve with 95% Confidence Interval",
-        )
-        ax.axis("square")
-        ax.grid(False)
-        ax.legend(loc="lower right")
-        if save_path:
-            plt.savefig(save_path)
-        else:
-            plt.show()
+        if not stratified:
+            tprs = []
+            fprs = []
+            aucs = []
+            mean_fpr = np.linspace(0, 1, cv_splits)
+            working_roc = roc_auc_score(y, model.predict_proba(X)[:,1])
+            rng = np.random.RandomState(random_state)
+            fig, ax = plt.subplots(figsize=(6, 6))
 
-    # if not stratified:
-    #     tprs = []
-    #     aucs = []
-    #     mean_fpr = np.linspace(0, 1, 100)
-    #     fig, ax = plt.subplots(figsize=(6, 6))
-    #     rng = np.random.RandomState(random_state)
+            for i in range(cv_splits):
+                # bootstrap by sampling with replacement on the prediction indices
+                indices = rng.randint(0, len(y), len(y))
+                fpr, tpr, _ = roc_curve(y[indices], model.predict_proba(X[indices])[:,1])
 
-    #     for fold, i in enumerate(range(cv_splits)):
-    #         # bootstrap by sampling with replacement on the prediction indices
-    #         indices = rng.randint(0, len(y), len(y))
-    #         print(indices)
-    #         if len(np.unique(y[indices])) < 2:
-    #             # We need at least one positive and one negative sample for ROC AUC
-    #             # to be defined: reject the sample
-    #             continue
-    #         viz = RocCurveDisplay.from_estimator(
-    #             model,
-    #             X[indices],
-    #             y[indices],
-    #             alpha=0.3,
-    #             lw=1,
-    #             ax=ax,
-    #         )
-    #         plt.cla() # This removes each individual interation
-    #         interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
-    #         interp_tpr[0] = 0.0
-    #         tprs.append(interp_tpr)
-    #         aucs.append(viz.roc_auc)
-    #     ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
-        
-    #     mean_tpr = np.mean(tprs, axis=0)
-    #     mean_tpr[-1] = 1.0
-    #     mean_auc = auc(mean_fpr, mean_tpr)
-    #     std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
-    #     ax.plot(
-    #         mean_fpr,
-    #         mean_tpr,
-    #         color="b",
-    #         label=r"Mean ROC (AUC = %0.2f $\pm$ %0.2f)" % (mean_auc, std_auc),
-    #         lw=2,
-    #         alpha=0.8,
-    #     )
+                interp_tpr = np.interp(mean_fpr, fpr, tpr)
+                interp_tpr[0] = 0.0
+                tprs.append(interp_tpr)
+                aucs.append( roc_auc_score(y[indices], model.predict_proba(X[indices])[:,1]) )
+            ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
+            
+            mean_tpr = np.mean(tprs, axis=0)
+            mean_tpr[-1] = 1.0
+            mean_auc = auc(mean_fpr, mean_tpr)
+            std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
+            
+            # print(mean_fpr)
+            # print(mean_tpr)
+            
+            ax.plot(
+                mean_fpr,
+                mean_tpr,
+                color="b",
+                label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {0.02:0.2f})",
+                lw=2,
+                alpha=0.8,
+            )
 
-    #     # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
-    #     tprs = np.array(tprs)
-    #     ci_tpr = [mean_confidence_interval(tprs[:,idx].flatten()) for idx in range(tprs.shape[1])]
-    #     ci_tpr = np.array(ci_tpr)[:,0] - np.array(ci_tpr)[:,1] # mean - (mean + ci)
+            # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
 
-    #     tprs_upper = np.minimum(mean_tpr + ci_tpr, 1)
-    #     tprs_lower = np.maximum(mean_tpr - ci_tpr, 0)
-    #     ax.fill_between(
-    #         mean_fpr,
-    #         tprs_lower,
-    #         tprs_upper,
-    #         color="grey",
-    #         alpha=0.2,
-    #         label="95% Confidence Interval",
-    #     )
+            tprs = np.array(tprs)
+            tprs_lower = []
+            tprs_upper = []
+            for idx in range(tprs.shape[1]):
+                tpr_row = tprs[:,idx].flatten()
+                ci_low, ci_up = st.t.interval(0.95, len(tpr_row)-1, loc=np.mean(tpr_row), scale=st.sem(tpr_row))
+                # print(ci_low, ci_up, mean_tpr[idx])
+                tprs_lower.append(ci_low)
+                tprs_upper.append(ci_up)
+            
+            ax.fill_between(
+                mean_fpr,
+                tprs_lower,
+                tprs_upper,
+                color="grey",
+                alpha=0.2,
+                label="95% Confidence Interval",
+            )
 
-    #     ax.set(
-    #         xlim=[0, 1],
-    #         ylim=[0, 1],
-    #         xlabel="False Positive Rate",
-    #         ylabel="True Positive Rate",
-    #         title="Mean ROC curve with 95% Confidence Interval",
-    #     )
-    #     ax.axis("square")
-    #     ax.grid(False)
-    #     ax.legend(loc="lower right")
-    #     if save_path:
-    #         plt.savefig(save_path)
-    #     else:
-    #         plt.show()
+            if not title:
+                title="Mean ROC curve with 95% Confidence Interval"
+            ax.set(
+                xlim=[0, 1],
+                ylim=[0, 1],
+                xlabel="False Positive Rate",
+                ylabel="True Positive Rate",
+                title="Mean ROC curve with 95% Confidence Interval",
+            )
+            ax.axis("square")
+            ax.grid(False)
+            ax.legend(loc="lower right")
+            if save_path:
+                plt.savefig(save_path)
+            else:
+                plt.show()
 
+    if isinstance(X, pd.DataFrame):    
+        if stratified:
+            cv = StratifiedKFold(n_splits=cv_splits)
 
-    if not stratified:
-        tprs = []
-        fprs = []
-        aucs = []
-        mean_fpr = np.linspace(0, 1, cv_splits)
-        working_roc = roc_auc_score(y, model.predict_proba(X)[:,1])
-        rng = np.random.RandomState(random_state)
-        fig, ax = plt.subplots(figsize=(6, 6))
+            tprs = []
+            aucs = []
+            mean_fpr = np.linspace(0, 1, 100)
 
-        for i in range(cv_splits):
-            # bootstrap by sampling with replacement on the prediction indices
-            indices = rng.randint(0, len(y), len(y))
-            fpr, tpr, _ = roc_curve(y[indices], model.predict_proba(X[indices])[:,1])
+            fig, ax = plt.subplots(figsize=(6, 6))
+            for fold, (train, test) in enumerate(cv.split(X, y)):
+                viz = RocCurveDisplay.from_estimator(
+                    model,
+                    X.iloc[train],
+                    y[train],
+                    name=f"ROC fold {fold}",
+                    alpha=0.3,
+                    lw=1,
+                    ax=ax,
+                )
+                plt.cla() # This removes each individual interation
+                interp_tpr = np.interp(mean_fpr, viz.fpr, viz.tpr)
+                interp_tpr[0] = 0.0
+                tprs.append(interp_tpr)
+                aucs.append(viz.roc_auc)
+            ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
+            
+            mean_tpr = np.mean(tprs, axis=0)
+            mean_tpr[-1] = 1.0
+            mean_auc = auc(mean_fpr, mean_tpr)
+            std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
 
-            interp_tpr = np.interp(mean_fpr, fpr, tpr)
-            interp_tpr[0] = 0.0
-            tprs.append(interp_tpr)
-            aucs.append( roc_auc_score(y[indices], model.predict_proba(X[indices])[:,1]) )
-        ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
-        
-        mean_tpr = np.mean(tprs, axis=0)
-        mean_tpr[-1] = 1.0
-        mean_auc = auc(mean_fpr, mean_tpr)
-        std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
-        
-        # print(mean_fpr)
-        # print(mean_tpr)
-        
-        ax.plot(
-            mean_fpr,
-            mean_tpr,
-            color="b",
-            label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {0.02:0.2f})",
-            lw=2,
-            alpha=0.8,
-        )
+            ax.plot(
+                mean_fpr,
+                mean_tpr,
+                color="b",
+                label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {std_auc:0.2f})",
+                lw=2,
+                alpha=0.8,
+            )
 
-        # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
+            # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
+            tprs = np.array(tprs)
+            ci_tpr = [mean_confidence_interval(tprs[:,idx].flatten()) for idx in range(tprs.shape[1])]
+            ci_tpr = np.array(ci_tpr)[:,0] - np.array(ci_tpr)[:,1] # mean - (mean + ci)
 
-        tprs = np.array(tprs)
-        tprs_lower = []
-        tprs_upper = []
-        for idx in range(tprs.shape[1]):
-            tpr_row = tprs[:,idx].flatten()
-            ci_low, ci_up = st.t.interval(0.95, len(tpr_row)-1, loc=np.mean(tpr_row), scale=st.sem(tpr_row))
-            # print(ci_low, ci_up, mean_tpr[idx])
-            tprs_lower.append(ci_low)
-            tprs_upper.append(ci_up)
-        
-        ax.fill_between(
-            mean_fpr,
-            tprs_lower,
-            tprs_upper,
-            color="grey",
-            alpha=0.2,
-            label="95% Confidence Interval",
-        )
+            tprs_upper = np.minimum(mean_tpr + ci_tpr, 1)
+            tprs_lower = np.maximum(mean_tpr - ci_tpr, 0)
+            ax.fill_between(
+                mean_fpr,
+                tprs_lower,
+                tprs_upper,
+                color="grey",
+                alpha=0.2,
+                label="95% Confidence Interval",
+            )
 
-        if not title:
-            title="Mean ROC curve with 95% Confidence Interval"
-        ax.set(
-            xlim=[0, 1],
-            ylim=[0, 1],
-            xlabel="False Positive Rate",
-            ylabel="True Positive Rate",
-            title="Mean ROC curve with 95% Confidence Interval",
-        )
-        ax.axis("square")
-        ax.grid(False)
-        ax.legend(loc="lower right")
-        if save_path:
-            plt.savefig(save_path)
-        else:
-            plt.show()
+            if not title:
+                title="Mean ROC curve with 95% Confidence Interval"
+            ax.set(
+                xlim=[0, 1],
+                ylim=[0, 1],
+                xlabel="False Positive Rate",
+                ylabel="True Positive Rate",
+                title="Mean ROC curve with 95% Confidence Interval",
+            )
+            ax.axis("square")
+            ax.grid(False)
+            ax.legend(loc="lower right")
+            if save_path:
+                plt.savefig(save_path)
+            else:
+                plt.show()
+
+        if not stratified:
+            tprs = []
+            fprs = []
+            aucs = []
+            mean_fpr = np.linspace(0, 1, cv_splits)
+            working_roc = roc_auc_score(y, model.predict_proba(X)[:,1])
+            rng = np.random.RandomState(random_state)
+            fig, ax = plt.subplots(figsize=(6, 6))
+
+            for i in range(cv_splits):
+                # bootstrap by sampling with replacement on the prediction indices
+                indices = rng.randint(0, len(y), len(y))
+                fpr, tpr, _ = roc_curve(y[indices], model.predict_proba(X.iloc[indices])[:,1])
+
+                interp_tpr = np.interp(mean_fpr, fpr, tpr)
+                interp_tpr[0] = 0.0
+                tprs.append(interp_tpr)
+                aucs.append( roc_auc_score(y[indices], model.predict_proba(X.iloc[indices])[:,1]) )
+            ax.plot([0, 1], [0, 1], "k--", label="chance level (AUC = 0.5)")
+            
+            mean_tpr = np.mean(tprs, axis=0)
+            mean_tpr[-1] = 1.0
+            mean_auc = auc(mean_fpr, mean_tpr)
+            std_auc = mean_confidence_interval(aucs)[0] - mean_confidence_interval(aucs)[1]
+            
+            # print(mean_fpr)
+            # print(mean_tpr)
+            
+            ax.plot(
+                mean_fpr,
+                mean_tpr,
+                color="b",
+                label=f"ROC (AUC = {mean_auc:0.2f} $\pm$ {0.02:0.2f})",
+                lw=2,
+                alpha=0.8,
+            )
+
+            # This is some array magic to make mean_confidence_interval play well along a numpy axis=0 selection
+
+            tprs = np.array(tprs)
+            tprs_lower = []
+            tprs_upper = []
+            for idx in range(tprs.shape[1]):
+                tpr_row = tprs[:,idx].flatten()
+                ci_low, ci_up = st.t.interval(0.95, len(tpr_row)-1, loc=np.mean(tpr_row), scale=st.sem(tpr_row))
+                # print(ci_low, ci_up, mean_tpr[idx])
+                tprs_lower.append(ci_low)
+                tprs_upper.append(ci_up)
+            
+            ax.fill_between(
+                mean_fpr,
+                tprs_lower,
+                tprs_upper,
+                color="grey",
+                alpha=0.2,
+                label="95% Confidence Interval",
+            )
+
+            if not title:
+                title="Mean ROC curve with 95% Confidence Interval"
+            ax.set(
+                xlim=[0, 1],
+                ylim=[0, 1],
+                xlabel="False Positive Rate",
+                ylabel="True Positive Rate",
+                title="Mean ROC curve with 95% Confidence Interval",
+            )
+            ax.axis("square")
+            ax.grid(False)
+            ax.legend(loc="lower right")
+            if save_path:
+                plt.savefig(save_path)
+            else:
+                plt.show()
+
