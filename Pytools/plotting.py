@@ -21,6 +21,7 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.base import clone
 import scipy.stats as st
 import statsmodels.stats.api as sms
+from scipy.stats import kruskal, zscore
 
 ##########
 # Set/Append Working directory
@@ -559,3 +560,63 @@ def plot_roc_curve_ci(
             else:
                 plt.show()
 
+
+def plot_training_probas(
+    model,
+    X, y,
+    cv_splits = 6,
+    plot = 'boxplot',
+    title = None,
+    save_path = None,
+    ):
+    '''
+    model (joblib) : model to be copied for determining training confidence
+    X (np.array or pd.DataFrame) : np array of features used
+    y (np.array) : list of labels used for classes
+    save_path (str) : string pointing where to save image
+    '''
+    if not isinstance(X, np.ndarray):
+        X = X.to_numpy()
+
+    cv = StratifiedKFold(n_splits=cv_splits)
+    model = clone(model)
+
+    sns.set_theme(style="whitegrid", palette="colorblind")
+
+    scores = []
+    labels = []
+    fig, ax = plt.subplots(figsize=(6, 6))
+    for fold, (train, test) in enumerate(cv.split(X, y)):
+        model.fit(X[train], y[train])
+
+        labels += list(y[test])
+        scores += list(model.predict_proba(X[test])[:,1])
+
+    df = pd.DataFrame({'preds' : scores}).apply(zscore)
+    df['labels'] = labels
+    df['labels'] = df['labels'].map({0:"Normal", 1:"Hyper"})
+
+    if plot == 'boxplot':
+        sns.boxplot(
+            df, x='labels', y='preds', 
+            order=["Normal", "Hyper"], boxprops={'alpha': 0.75}
+            ).set(ylabel="Prediction Score", xlabel=None, title=title)
+    if plot == 'violinplot':
+        sns.violinplot(
+            df, x='labels', y='preds', 
+            order=["Normal", "Hyper"], boxprops={'alpha': 0.75}
+            ).set(ylabel="Prediction Score", xlabel=None, title=title)
+
+    kruskal_wallis = kruskal(df.loc[df['labels'] == "Normal"]['preds'], df.loc[df['labels'] == "Hyper"]['preds'])
+    if kruskal_wallis[1] < 0.05:
+        # statistical annotation
+        x1, x2 = 0, 1
+        y, h = df['preds'].max()+0.02, 0.01
+        plt.plot([x1, x1, x2, x2], [y, y+h, y+h, y], lw=1.2, c='k')
+        plt.text((x1+x2)*.5, y+h, f"p = {kruskal_wallis[1]:.4f}",
+                 ha='center', va='bottom', color='k')
+        print(f'p-value is {kruskal_wallis[1]}')
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()

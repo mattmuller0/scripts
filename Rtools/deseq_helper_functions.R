@@ -70,7 +70,7 @@ ovr_deseq_results <- function(dds, column, outpath){
                                    design <- ~ condition)
     dds_ <- DESeq(dds_)
     res <- results(dds_)
-    # assign(paste(res,'_',lvl,'_','rest'), res)
+    write.csv(dds_, file=paste0(outpath, '/deseqDataset_', column,'__',lvl,'_v_','rest.csv'))
     write.csv(res, file=paste0(outpath, '/dge_results_', column,'__',lvl,'_v_','rest.csv'))
     }
   }
