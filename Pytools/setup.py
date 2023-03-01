@@ -1,8 +1,5 @@
 import setuptools
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
-
 setuptools.setup(
     name="MattTools",
     version="0.1",
@@ -14,12 +11,5 @@ setuptools.setup(
         "Programming Language :: Python :: 3.7",
         "License :: OSI Approved :: MIT License",
     ],
-    install_requires=[
-        "matplotlib >= 3.3.4",
-        "numpy >= 1.20.1",
-        "pandas >= 1.2.2",
-        "scipy >= 1.6.0",
-        "seaborn >= 0.11.1",
-        "sklearn >= 1.1.3",
-    ]
+    install_requires=[]
 )
