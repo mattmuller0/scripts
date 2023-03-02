@@ -58,25 +58,23 @@ rank_estimator <- function(
 
 
 add_missing_rows <- function(
-    # Adds
-  df_to_add, # cols = samples, rows = genes
-  df_with_rows, # cols = samples, rows = genes
-  sorted = TRUE
-){
-  missingRowNames <-  rownames(df_with_rows)[which(!rownames(df_with_rows) %in% rownames(df_to_add))]
+    df, # cols = samples, rows = genes
+    rows, # cols = samples, rows = genes
+    sorted = TRUE ){
+  missingRowNames <-  rows[which(!rows %in% rownames(df))]
   print(missingRowNames)
   df_tmp <- as.data.frame(matrix(0,
                                  nrow = length(missingRowNames),
-                                 ncol = dim(df_to_add)[2]
+                                 ncol = dim(df)[2]
   )
   )
-  print(dim(df_tmp))
-  print(length(missingRowNames))
-  colnames(df_tmp) <- colnames(df_to_add)
+  # print(dim(df_tmp))
+  # print(length(missingRowNames))
+  colnames(df_tmp) <- colnames(df)
   rownames(df_tmp) <- missingRowNames
-  print(head(df_tmp))
-  print(head(df_to_add))
-  df <- rbind(df_tmp, df_to_add)
+  # print(head(df_tmp))
+  # print(head(df))
+  df <- rbind(df_tmp, df)
   if (sorted) {
     df <- df[order(rownames(df)),]
   }
