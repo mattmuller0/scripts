@@ -73,5 +73,12 @@ ovr_deseq_results <- function(dds, column, outpath){
     res <- results(dds_)
     save(dds_, file=paste0(outpath, '/deseqDataset_', column,'__',lvl,'_v_rest.rdata'))
     write.csv(res, file=paste0(outpath, '/dge_results_', column,'__',lvl,'_v_rest.csv'))
+    
+    pdf(paste0(outpath, '/volcanoPlot_', column,'__',lvl,'_v_rest.pdf'))
+    EnhancedVolcano(res, lab=rownames(res),
+                    x = 'log2FoldChange', y = 'pvalue',
+                    title = paste0(column,'__',lvl,'_v_rest'),
+                    subtitle = '')
+    dev.off()
     }
   }
