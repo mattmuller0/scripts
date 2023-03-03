@@ -49,6 +49,7 @@ options(stringsAsFactors = FALSE)
 # Add code here
 #
 ovr_deseq_results <- function(dds, column, outpath){
+  require(DESeq2)
   # This function takes in a DDS or SE object, the condition column of interest
   # and the out directory path to push results to. It will run OVR differential
   # expression analysis on each level within the condition column.
@@ -70,7 +71,7 @@ ovr_deseq_results <- function(dds, column, outpath){
                                    design <- ~ condition)
     dds_ <- DESeq(dds_)
     res <- results(dds_)
-    write.csv(dds_, file=paste0(outpath, '/deseqDataset_', column,'__',lvl,'_v_','rest.csv'))
-    write.csv(res, file=paste0(outpath, '/dge_results_', column,'__',lvl,'_v_','rest.csv'))
+    save(dds_, file=paste0(outpath, '/deseqDataset_', column,'__',lvl,'_v_rest.rdata'))
+    write.csv(res, file=paste0(outpath, '/dge_results_', column,'__',lvl,'_v_rest.csv'))
     }
   }
